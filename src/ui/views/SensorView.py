@@ -510,7 +510,7 @@ class SensorView(QWidget):
         l = QVBoxLayout()
         self.enableWSS = SettingWidget("启用")
         phonesite = LineWidget("手机网址：", QLabel(), "https://jhkjux.com/active")
-        self.phoneserver = LineWidget("服务器：", QLabel(), "尚未连接")
+        self.phoneserver = LineWidget("服务器：", QLabel(), "尚未启用")
         notice = QLabel("<strong>您可以使用智能手机获取定位信息，替代GPS传感器。</strong>")
         notice.setWordWrap(True)
         # l.addWidget(self.phone_toggle)

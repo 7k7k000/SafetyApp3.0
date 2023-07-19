@@ -1,4 +1,4 @@
-from src.src.sensors.BLESensor import BLESensor
+from src.src.sensors.blesensor import BLESensor
 
 
 from PySide6.QtCore import QObject, Signal, Slot
@@ -14,6 +14,7 @@ class SensorHub(QObject):
     sigBattery = Signal(dict)
     sigMotion = Signal(dict)
     sigGeolocation = Signal(dict)
+    sigWSServer = Signal(str)
     sigConnection = Signal(dict)
 
     def __init__(self) -> None:
@@ -89,7 +90,7 @@ class SensorHub(QObject):
     async def wss_server(self):
         self.wss_stop_event = asyncio.Event()
         self.ip = self.local_ip()
-        print(self.ip)
+        self.sigWSServer.emit(f"{self.ip}:8765")
         self._ssl_context = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
         self._ssl_context.load_cert_chain(
         './resources/ssl/snakeoil.pem', keyfile='./resources/ssl/snakeoil.key')
@@ -97,6 +98,7 @@ class SensorHub(QObject):
             print(f"WebSocket Secure Serving @ {self.ip}:8765")
             await self.wss_stop_event.wait()
             print("WebSocket Secure Serving Terminated")
+            self.sigWSServer.emit("尚未启用")
             
     async def _on_wss_connection(self, ws):
         while not self.wss_stop_event.is_set():

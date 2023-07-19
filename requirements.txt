@@ -1,0 +1,14 @@
+opencv-python
+numpy
+pandas
+scipy
+pyyaml
+torch
+timm
+bleak
+websockets
+mediapipe<0.9
+PySide6<=6.3.0
+pyqtdarktheme
+pyqtgraph
+qasync

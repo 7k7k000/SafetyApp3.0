@@ -1,7 +1,7 @@
-from src.src.sensors.SensorHub import SensorHub
-from src.src.sensors.SensorModel import DataModel
+from src.src.sensors.sensorhub import SensorHub
+from src.src.sensors.sensormodel import DataModel
 from src.src.utils.Async import QAsyncWorkerThread
-from src.ui.views.SensorView import SensorView
+from src.ui.views.sensorview import SensorView
 from PySide6.QtWidgets import (
     QWidget,
     QPushButton,
@@ -21,6 +21,7 @@ def sensor_management(hub:SensorHub, view:SensorView, model: DataModel):
     hub.sigMotion.connect(view.imugui.device_data_update)
     hub.sigMotion.connect(model.on_data_receive)
     hub.sigGeolocation.connect(view.speedbox_display)
+    hub.sigWSServer.connect(view.phoneserver.setText)
     view.imugui.ble_state_signal.connect(hub.scan)
     view.imugui.imu_device_removed_signal.connect(hub.stop_device)
     view.imugui.sensor_rate_changed_signal.connect(hub.change_sensor_rate)
