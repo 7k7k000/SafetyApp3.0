@@ -90,6 +90,9 @@ class FingerWorker(ArrayWorker):
         
         self.M = np.array([])
         # self.SCREEN_RES = screen_res
+        
+    def update_screen(self, e):
+        print(e)
 
 
     def predict(self, frame):

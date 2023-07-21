@@ -65,48 +65,6 @@ class VideoLabel(NDArrayLabel):
         self._original_pixmap = pixmap
         super().setPixmap(pixmap)
 
-class CabinLabel(VideoLabel):
-    mode = 0
-    def __init__(self):
-        super().__init__()
-        self.rect_path = []
-        
-    def setMode(self, mode:int):
-        self.mode = mode
-        if mode == 1:
-            self.setCursor(QtGui.QCursor(QtCore.Qt.CrossCursor))
-            
-    def mousePressEvent(self, event):
-        if self.mode:
-            if event.button() == Qt.LeftButton:
-                self.pressPos = event.pos()
-
-    def mouseReleaseEvent(self, event):
-        # ensure that the left button was pressed *and* released within the
-        # geometry of the widget; if so, emit the signal;
-        if self.mode:
-            if (self.pressPos is not None and 
-                event.button() == Qt.LeftButton and len(self.rect_path) < 5):
-                    self.get_img_crd(self.pressPos)
-            self.pressPos = None
-
-    def reset_selected_pos(self, e):
-        self.rect_path = []
-
-    def get_img_crd(self, pos):
-        x, y = pos.x(), pos.y()
-        x1, y1, x2, y2 = self.pixmap_rect
-        w, h = self._original_pixmap.width(), self._original_pixmap.height()
-        x0, y0 = x-x1, y-y1
-        x, y = x0 / w, y0/ h
-        if x > 1 or y > 1 or x < 0 or y < 0:
-            return
-        
-        self.rect_path.append((x, y))
-        if len(self.rect_path) == 4:
-            print(self.rect_path)
-            self.rect_path.append(self.rect_path[0])
-
 class PedalCalibrator(QWidget):
     def __init__(self) -> None:
         super().__init__()
@@ -229,3 +187,42 @@ class CamSelectWidget(QtCore.QObject):
             else:
                 cam = None
             self.currentTextChanged.emit(cam)
+
+
+class XYInputWidget(QWidget):
+    sigPosChanged = Signal(object)
+    def __init__(self, prompt=("x:", "y:")):
+        super().__init__()
+        l1 = QLabel(prompt[0])
+        l2 = QLabel(prompt[1])
+        self.x = QSpinBox()
+        self.y = QSpinBox()
+        self.x.setMinimumWidth(60)
+        self.y.setMinimumWidth(60)
+        layout = QHBoxLayout()
+        layout.addWidget(l1)
+        layout.addWidget(self.x)
+        layout.addWidget(l2)
+        layout.addWidget(self.y)
+        self.setLayout(layout)
+
+        self.x.valueChanged.connect(self.onPosChanged)
+        self.y.valueChanged.connect(self.onPosChanged)
+
+        # self.setMinimumWidth(200)
+
+    def set_xy_bound(self, w, h):
+        self.x.setMaximum(w)
+        self.y.setMaximum(h)
+        pass
+
+    def update_crd(self, crd):
+        xx, yy = crd
+        self.x.setValue(xx)
+        self.y.setValue(yy)
+
+    def get_pos(self):
+        return self.x.value(), self.y.value()
+
+    def onPosChanged(self, e):
+        self.sigPosChanged.emit(0)

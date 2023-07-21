@@ -77,6 +77,10 @@ class QtDualCamManager(QObject):
     def switch_worker(self, e, destine):
         if self.cams[destine] is not None:
             self.cams[destine].switch_worker(e, destine)
+            
+    def finger_screen_data(self, e):
+        if self.cams[1] is not None and isinstance(self.cams[1]._arrayProcessor.worker(), FingerWorker):
+            self.cams[1]._arrayProcessor.worker().update_screen(e)
         
     
 class QtCam(QObject):

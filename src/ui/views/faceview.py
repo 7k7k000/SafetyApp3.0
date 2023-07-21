@@ -2,16 +2,15 @@ from PySide6 import QtCore, QtWidgets, QtGui
 from PySide6.QtCore import Signal, Qt, QEvent
 import PySide6.QtGui
 from PySide6.QtWidgets import (
-    QWidget,  QLabel,
-    QCheckBox, QComboBox,  QDoubleSpinBox,
-    QLCDNumber, QPushButton, QSpinBox, 
-    QToolBar, QGroupBox, QSlider,
-    QVBoxLayout, QHBoxLayout, QGroupBox, QGridLayout
+    QWidget,  QCheckBox, QComboBox,  QDoubleSpinBox,
+    QLCDNumber, QPushButton, QToolBar, QGroupBox, QSlider,
+    QVBoxLayout, QHBoxLayout, QGroupBox
 )
-from src.ui.widgets.Element import VideoLabel, CabinLabel, LineWidget, CamSelectWidget
+from src.ui.views.ScreenCaliWidget import ScreenCaliWidget
+from src.ui.widgets.CabinLabel import CabinLabel
+from src.ui.widgets.Element import VideoLabel, LineWidget, CamSelectWidget
 from src.ui.widgets.Toggle import SettingWidget
 import os
-import numpy as np
 
 class CabinVideoLabel(VideoLabel):
     default_color = ('#CC97DECE', '#439A97')
@@ -88,111 +87,6 @@ class CabinVideoLabel(VideoLabel):
         except:
             pass
 
-class XYInputWidget(QWidget):
-    sigPosChanged = Signal(object)
-    def __init__(self, prompt=("x:", "y:")):
-        super().__init__()
-        l1 = QLabel(prompt[0])
-        l2 = QLabel(prompt[1])
-        self.x = QSpinBox()
-        self.y = QSpinBox()
-        self.x.setMinimumWidth(60)
-        self.y.setMinimumWidth(60)
-        layout = QHBoxLayout()
-        layout.addWidget(l1)
-        layout.addWidget(self.x)
-        layout.addWidget(l2)
-        layout.addWidget(self.y)
-        self.setLayout(layout)
-        
-        self.x.valueChanged.connect(self.onPosChanged)
-        self.y.valueChanged.connect(self.onPosChanged)
-        
-        # self.setMinimumWidth(200)
-        
-    def set_xy_bound(self, w, h):
-        self.x.setMaximum(w)
-        self.y.setMaximum(h)
-        pass
-    
-    def update_crd(self, crd):
-        xx, yy = crd
-        self.x.setValue(xx)
-        self.y.setValue(yy)
-        
-    def get_pos(self):
-        return self.x.value(), self.y.value()
-        
-    def onPosChanged(self, e):
-        self.sigPosChanged.emit(0)
-
-class ScreenCaliWidget(QWidget):
-    showing = False
-    sigCloseEvent = Signal()
-    SCREEN_RECT = (148, 236)
-    SCREEN_RES = (600, 1000)
-    
-    def __init__(self, parent=None):
-        super().__init__(parent)
-        self.setWindowFlags(QtCore.Qt.WindowStaysOnTopHint)
-        self._resetAreaSelectButton = QPushButton("重置屏幕区域")
-        self._screen_area_input = XYInputWidget(prompt=("宽:", "高:"))
-        self._pt0_input = XYInputWidget()
-        self._pt1_input = XYInputWidget()
-        self._pt2_input = XYInputWidget()
-        self._pt3_input = XYInputWidget()
-        
-        for i in (self._pt0_input,
-                self._pt1_input,
-                self._pt2_input,
-                self._pt3_input):
-            i.sigPosChanged.connect(self._on_pos_maunally_changed)
-            i.setDisabled(True)
-            
-        # self._screen_area_input.sigPosChanged.connect(self._on_screen_res_manually_changed)
-        self._screen_area_input.set_xy_bound(1000,1000)
-        self._screen_area_input.update_crd(self.SCREEN_RECT)
-        
-        
-        ctrl_layout = QGridLayout()
-        llll = QHBoxLayout()
-        llll.addStretch()
-        llll.addWidget(self._resetAreaSelectButton)
-        llll.addStretch()
-        
-        ctrl_layout.addLayout(llll,3,0,1,2)
-        linew = LineWidget("屏幕尺寸(mm):", self._screen_area_input, width=350)
-        lll = QHBoxLayout()
-        lll.addStretch()
-        lll.addWidget(linew)
-        lll.addStretch()
-        ctrl_layout.addLayout(lll,0,0,1,2)
-        ctrl_layout.addWidget(LineWidget("左上角(px):", self._pt0_input, width=300),1,0)
-        ctrl_layout.addWidget(LineWidget("左下角(px):", self._pt3_input, width=300),2,0)
-        ctrl_layout.addWidget(LineWidget("右上角(px):", self._pt1_input, width=300),1,1)
-        ctrl_layout.addWidget(LineWidget("右下角(px):", self._pt2_input, width=300),2,1)
-        self.setLayout(ctrl_layout)
-        
-        self.setWindowTitle("中控屏位置标定")
-        
-    def closeEvent(self, event) -> None:
-        self.showing = False
-        return super().closeEvent(event)
-    
-    def showEvent(self, event) -> None:
-        self.showing = True
-        return super().showEvent(event)
-    
-    def _on_pos_maunally_changed(self, e):
-        if self.manual_enable:
-            new_pts = np.array([i.get_pos() for i in (self._pt0_input,
-                                                    self._pt1_input,
-                                                    self._pt2_input,
-                                                    self._pt3_input)]).astype('float32')
-            
-    
-        
-
 class FaceSettingView(QWidget):
     face_cam_changed_signal = Signal(int)
     def __init__(self):
@@ -256,8 +150,6 @@ class FaceSettingView(QWidget):
         
     def hide_cabin_cali(self):
         self.cabinlabel.setMode(0)
-        
-    
 
     def fingersetting(self):
         l = QVBoxLayout()
@@ -324,6 +216,8 @@ class FaceSettingView(QWidget):
 
     def cabinbox1(self):
         self.cabinlabel = CabinLabel()
+        self.cabinlabel.sigRectPath.connect(self.screen_cali_widget.on_viewwidget_rect_selected)
+        self.screen_cali_widget.sigScreenReset.connect(self.cabinlabel.reset_selected_pos)
         l = QVBoxLayout()
         self.cabincamselect = CamSelectWidget()
         l.addWidget(self.cabinlabel)

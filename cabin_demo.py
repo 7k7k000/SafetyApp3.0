@@ -39,6 +39,8 @@ class MainWindow(QObject):
         
         self.view.enable_gaze_tracking.stateChanged.connect(lambda e: self.caman.switch_worker(e, 0))
         self.view.enable_finger_tracking.stateChanged.connect(lambda e: self.caman.switch_worker(e, 1))
+        
+        self.view.screen_cali_widget.sigScreenRect.connect(self.caman.finger_screen_data)
 
 
 app = QApplication(sys.argv)
