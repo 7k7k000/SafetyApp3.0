@@ -38,9 +38,12 @@ class MainWindow(QObject):
         self.caman.sigVideoInputsChanged.connect(lambda e: self.view.cabincamselect.videoInputsChanged(e, 1))  
         
         self.view.enable_gaze_tracking.stateChanged.connect(lambda e: self.caman.switch_worker(e, 0))
-        self.view.enable_finger_tracking.stateChanged.connect(lambda e: self.caman.switch_worker(e, 1))
+        self.view.enable_finger_tracking.stateChanged.connect(self.caman.enable_finger_tracking)
         
         self.view.screen_cali_widget.sigScreenRect.connect(self.caman.finger_screen_data)
+        self.view.screen_cali_widget.sigWidgetShow.connect(self.caman.finger_screen_show)
+
+        self.caman.sigFingerTrackingPos.connect(self.view.preview_finger_status)
 
 
 app = QApplication(sys.argv)

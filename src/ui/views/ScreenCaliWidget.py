@@ -10,9 +10,9 @@ from PySide6.QtWidgets import QGridLayout, QHBoxLayout, QPushButton, QWidget
 
 class ScreenCaliWidget(QWidget):
     showing = False
-    sigScreenRect = Signal(tuple)
+    sigScreenRect = Signal(dict)
     sigScreenReset = Signal()
-    sigCloseEvent = Signal()
+    sigWidgetShow = Signal(bool)
     manual_enable = False
     SCREEN_RECT = (148, 236)
 
@@ -62,12 +62,13 @@ class ScreenCaliWidget(QWidget):
 
     def closeEvent(self, event) -> None:
         self.showing = False
-        self.sigCloseEvent.emit()
-        self.enable_manual_editing(False)
+        self.sigWidgetShow.emit(False)
+        # self.enable_manual_editing(False)
         return super().closeEvent(event)
 
     def showEvent(self, event) -> None:
         self.showing = True
+        self.sigWidgetShow.emit(True)
         return super().showEvent(event)
 
     def enable_manual_editing(self, i:bool):
@@ -86,6 +87,9 @@ class ScreenCaliWidget(QWidget):
                 self._pt3_input):
             i.update_crd((0,0))
         self.sigScreenReset.emit()
+        self.sigScreenRect.emit({
+            'status': False
+        })
         
     def _on_pos_maunally_changed(self, e):
         if self.manual_enable:
@@ -93,9 +97,19 @@ class ScreenCaliWidget(QWidget):
                                                     self._pt1_input,
                                                     self._pt2_input,
                                                     self._pt3_input)]).astype('float32')
-            screen_dimension = self._screen_area_input.get_pos()
-            # print(pts, screen_dimension)
-            self.sigScreenRect.emit((pts, screen_dimension))
+            '''
+            屏幕尺寸(mm)与像素的转换
+            常见的例如100dpi,300dpi一般对应印刷物
+            对于汽车中控屏幕而言，可能很大一块屏幕依然是较小的像素密度
+            这里暂定4像素每mm，未来优化
+            '''
+            screen_dimension = [i*4 for i in self._screen_area_input.get_pos()]
+            sig = {
+                'status': True,
+                'pts': pts,
+                'screen_dimension': screen_dimension
+            }
+            self.sigScreenRect.emit(sig)
             
 
     def on_viewwidget_rect_selected(self, e):

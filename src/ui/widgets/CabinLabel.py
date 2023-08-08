@@ -60,6 +60,7 @@ class CabinLabel(NDArrayLabel):
         if len(self.rect_path) == 4:
             self.sigRectPath.emit((self.rect_path, self._array.shape))
             self.rect_path.append(self.rect_path[0])
+            # self.rect_path = []
 
     def setPixmap(self, pixmap: QtGui.QPixmap):
         if pixmap.width() == 0:
@@ -94,7 +95,7 @@ class CabinLabel(NDArrayLabel):
         if len(self.rect_path) > 1 and len(self.rect_path) < 5:
             painter = QtGui.QPainter(pixmap)
             pen = QtGui.QPen()
-            pen.setWidth(5)
+            pen.setWidth(2)
             pen.setColor(QtGui.QColor('red'))
             painter.setPen(pen)
             rect_path = [(i[0] * w, i[1] * h) for i in self.rect_path]

@@ -1,7 +1,7 @@
 import cv2
 import numpy as np
 from scipy.spatial.transform import Rotation
-
+import traceback
 from src.src.cv.torch.face_model_mediapipe import Camera, FaceParts, FacePartsName
 
 
@@ -24,17 +24,29 @@ class HeadPoseNormalizer:
 
     def _normalize_image(self, image: np.ndarray,
                          eye_or_face: FaceParts) -> None:
-        camera_matrix_inv = np.linalg.inv(self.camera.camera_matrix)
+        # print(np.linalg.inv(self.camera.camera_matrix.copy()))
+        print(0)
+        camera_matrix_inv = np.array([[ 0.0015625,  0.,        -0.5,      ],
+            [ 0.,         0.0015625, -0.375    ],
+            [ 0.,         0.,         1.       ],])
+        # camera_matrix_inv = np.linalg.inv(self.camera.camera_matrix)
+        print(camera_matrix_inv)
         normalized_camera_matrix = self.normalized_camera.camera_matrix
+        print(2)
 
         scale = self._get_scale_matrix(eye_or_face.distance)
+        print(3)
         conversion_matrix = scale @ eye_or_face.normalizing_rot.as_matrix()
+        print(4)
 
         projection_matrix = normalized_camera_matrix @ conversion_matrix @ camera_matrix_inv
+        print(5)
 
         normalized_image = cv2.warpPerspective(
             image, projection_matrix,
             (self.normalized_camera.width, self.normalized_camera.height))
+        print(6)
+        normalized_image = image
 
         if eye_or_face.name in {FacePartsName.REYE, FacePartsName.LEYE}:
             normalized_image = cv2.cvtColor(normalized_image,

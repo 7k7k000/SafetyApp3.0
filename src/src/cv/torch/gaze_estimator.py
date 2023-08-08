@@ -49,7 +49,6 @@ class GazeEstimator:
         self._face_model3d.estimate_head_pose(face, self.camera)
         self._face_model3d.compute_3d_pose(face)
         self._face_model3d.compute_face_eye_centers(face, 'ETH-XGaze')
-
         self._head_pose_normalizer.normalize(image, face)
         self._run_ethxgaze_model(face)
 

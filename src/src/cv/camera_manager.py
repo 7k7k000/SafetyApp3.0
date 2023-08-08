@@ -53,6 +53,9 @@ class QtDualCamManager(QObject):
             for i in self.available_cameras:
                 if i.id() == cam.id():
                     self.cams[destine_index] = QtCam(i, destine_index)
+                    if destine_index == 1:
+                        self.cams[1].switch_worker(1, 1)
+                        self.cams[1]._arrayProcessor.worker().sigFingerTrackingPos.connect(lambda res: self.sigFingerTrackingPos.emit(res))
                     self.cams[destine_index].sigFrameArray.connect(self.destines[destine_index])
                     self.cams[destine_index].start()
                     break
@@ -77,10 +80,19 @@ class QtDualCamManager(QObject):
     def switch_worker(self, e, destine):
         if self.cams[destine] is not None:
             self.cams[destine].switch_worker(e, destine)
+
+    def enable_finger_tracking(self, e):
+        self.cams[1]._arrayProcessor.worker().enable_finger_tracking(e)
+        pass
             
     def finger_screen_data(self, e):
-        if self.cams[1] is not None and isinstance(self.cams[1]._arrayProcessor.worker(), FingerWorker):
-            self.cams[1]._arrayProcessor.worker().update_screen(e)
+        if self.cams[1] is not None:
+            self.cams[1]._arrayProcessor.worker().update_screen_transform(e)
+
+    def finger_screen_show(self, e):
+        if self.cams[1] is not None:
+            self.cams[1]._arrayProcessor.worker().update_screen_show(e)
+
         
     
 class QtCam(QObject):

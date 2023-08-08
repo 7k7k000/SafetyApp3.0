@@ -97,7 +97,7 @@ class FaceSettingView(QWidget):
             if i.endswith(".jpg") or i.endswith('.png') or i.endswith('.jpeg')]
         
         self.screen_cali_widget = ScreenCaliWidget()
-        self.screen_cali_widget.sigCloseEvent.connect(self.hide_cabin_cali)
+        self.screen_cali_widget.sigWidgetShow.connect(self.set_cabin_cali)
         self.facebox = QGroupBox("驾驶员画面")
         self.cabinbox = QGroupBox("座舱画面")
         gaze_settingbox = QGroupBox("眼动追踪设置")
@@ -146,23 +146,26 @@ class FaceSettingView(QWidget):
         
     def show_cabin_cali(self):
         self.screen_cali_widget.show()
-        self.cabinlabel.setMode(1)
         
-    def hide_cabin_cali(self):
-        self.cabinlabel.setMode(0)
+    def set_cabin_cali(self, e):
+        self.cabinlabel.setMode(int(e))
 
     def fingersetting(self):
         l = QVBoxLayout()
         self.enable_finger_tracking = SettingWidget("手指实时追踪")
         self.enable_recording_overlay = SettingWidget("实时显示手指叠加")
-        self.open_screen_cali = QPushButton("标定中控屏区域", clicked = self.show_cabin_cali)
-        self.open_screen_cali.setFixedSize(100,30)
+        
+        # self.open_screen_cali = QPushButton("标定中控屏区域", clicked = self.show_cabin_cali)
+        # self.open_screen_cali.setFixedSize(100,30)
         # l.setAlignment(Qt.AlignmentFlag.AlignCenter)
         l.addWidget(self.enable_finger_tracking)
         l.addWidget(self.enable_recording_overlay)
-        l.addWidget(self.open_screen_cali)
+        
+        # l.addWidget(self.open_screen_cali)
         l.addStretch()
         return l
+    
+
     
 
     def toggle_cali(self, e):
@@ -176,21 +179,33 @@ class FaceSettingView(QWidget):
 
     def cabin_cali_box(self):
         l = QVBoxLayout()
-        enable = SettingWidget("开启座舱POV映射")
-        enable.stateChanged.connect(self.toggle_cali_enable)
-        self.all_cabin_imgs = [i.split('/')[-1].split('.')[0] for i in self.all_avaliable_cabin_imgs_path]
-        self.imgselect = QComboBox()
-        self.imgselect.addItems(self.all_cabin_imgs)
-        self.imgselect.currentIndexChanged.connect(self.set_cabin_img)
-        self.img = LineWidget("座舱示意图", self.imgselect)
-        self.btn = SettingWidget("开启互动式校准")
-        self.btn.stateChanged.connect(self.toggle_cali)
+        self.finger_preview_text = QtWidgets.QLabel("")
+        l.addWidget(self.finger_preview_text)
+        # enable = SettingWidget("开启座舱POV映射")
+        # enable.stateChanged.connect(self.toggle_cali_enable)
+        # self.all_cabin_imgs = [i.split('/')[-1].split('.')[0] for i in self.all_avaliable_cabin_imgs_path]
+        # self.imgselect = QComboBox()
+        # self.imgselect.addItems(self.all_cabin_imgs)
+        # self.imgselect.currentIndexChanged.connect(self.set_cabin_img)
+        # self.img = LineWidget("座舱示意图", self.imgselect)
+        # self.btn = SettingWidget("开启互动式校准")
+        # self.btn.stateChanged.connect(self.toggle_cali)
 
-        for i in (self.img, self.btn):
-            l.addWidget(i)
+        # for i in (self.img, self.btn):
+        #     l.addWidget(i)
         
         l.addStretch()
         return l
+    
+    def preview_finger_status(self, res):
+        if len(res) == 0:
+            self.finger_preview_text.setText("未检测到食指位置")
+        else:
+            s = ""
+            for i in res:
+                status, x, y = i
+                s += f"x={round(x, 2)}mm, y={round(y,2)}mm{' 在屏幕外' if not status else ''}\n"
+            self.finger_preview_text.setText(s)
 
     def settingbox1(self):
         l = QVBoxLayout()
@@ -198,7 +213,7 @@ class FaceSettingView(QWidget):
         self.enable_gaze_preview = SettingWidget("视频预览视线叠加")
 
         l.addWidget(self.enable_gaze_tracking)
-        l.addWidget(self.enable_gaze_preview)
+        # l.addWidget(self.enable_gaze_preview)
 
         l.addStretch()
         return l
@@ -222,6 +237,8 @@ class FaceSettingView(QWidget):
         self.cabincamselect = CamSelectWidget()
         l.addWidget(self.cabinlabel)
         ll = QHBoxLayout()
+        self.open_screen_cali = QPushButton("标定中控屏区域", clicked = self.show_cabin_cali)
+        ll.addWidget(self.open_screen_cali)
         ll.addStretch()
         ll.addWidget(self.cabincamselect.getWidget())
         l.addLayout(ll)

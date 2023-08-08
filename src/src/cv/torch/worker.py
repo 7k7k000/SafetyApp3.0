@@ -10,11 +10,19 @@ import time
 class ArrayWorker(Worker):
     sigOriginalFrame = Signal(object)
     pausePreview = False
+    scale_percent = 25
     
+
     def __init__(self):
         super().__init__()
-        
-        
+
+    def scale(self, image):
+        width = int(image.shape[1] * self.scale_percent / 100)
+        height = int(image.shape[0] * self.scale_percent / 100)
+        dim = (width, height)
+        image = cv2.resize(image, dim, interpolation=cv2.INTER_AREA)
+        return image
+
 class GazeWorker(ArrayWorker):
     def __init__(self):
         super().__init__()
@@ -26,11 +34,9 @@ class GazeWorker(ArrayWorker):
         self.sigOriginalFrame.emit(cv2.cvtColor(image, cv2.COLOR_BGR2RGB))
         if self.pausePreview:
             return np.array([])
-        scale_percent = 25 # percent of original size
-        width = int(image.shape[1] * scale_percent / 100)
-        height = int(image.shape[0] * scale_percent / 100)
-        dim = (width, height)
-        image = cv2.resize(image, dim, interpolation=cv2.INTER_AREA)
+        
+        image = self.scale(image)
+
         undistorted = cv2.undistort(
             image, self.gaze_estimator.camera.camera_matrix,
             self.gaze_estimator.camera.dist_coefficients)
@@ -59,15 +65,21 @@ class FingerWorker(ArrayWorker):
     araviq provides seamless transformation between numpy array(CV calculation) and QImage(display), see more in its documentation
     '''
     sigFingerTrackingPos = Signal(object)
-    sigOriginalFrame = Signal(object)
+    screen_transform = {
+        'status': False
+    }
+    is_tracking_finger = False
+    is_previewing_calibration = False
+    M = np.array([])
     def __init__(self):
         super().__init__()
         self.mp_drawing = mp.solutions.drawing_utils
+        # self.drawing_spec = self.mp_drawing.DrawingSpec(thickness=5, circle_radius=8)
         self.mp_drawing_styles = mp.solutions.drawing_styles
         self.mp_hands = mp.solutions.hands
         self.hands = self.mp_hands.Hands(
                         static_image_mode = False,
-                        max_num_hands = 1,
+                        max_num_hands = 3,
                         model_complexity=0,
                         min_detection_confidence=0.5,
                         min_tracking_confidence=0.5)
@@ -87,95 +99,126 @@ class FingerWorker(ArrayWorker):
                             Z=measurementStateMatrix,
                             H=observationMatrix,
                             R=measurementNoiseCov)
-        
-        self.M = np.array([])
         # self.SCREEN_RES = screen_res
-        
-    def update_screen(self, e):
-        print(e)
 
+    def enable_finger_tracking(self, e):
+        self.is_tracking_finger = bool(e)
+
+    def update_screen_show(self, e):
+        self.is_previewing_calibration = e
+
+    def update_screen_transform(self, e):
+        '''
+        用于手指追踪屏幕预览
+        '''
+        self.screen_transform = e
+        if self.screen_transform['status'] is False:
+            self.M = np.array([])
+            return
+        width, height = self.screen_transform['screen_dimension']
+        pts = self.screen_transform['pts']
+        # print(pts)
+        dst = np.float32([[0, 0], [width, 0], [width, height], [0, height]])
+        self.M = cv2.getPerspectiveTransform(pts, dst)
+        self.M_inverse = cv2.invert(self.M)[1]
+
+    def transform_and_scale(self, image):
+        if self.screen_transform['status'] is True and self.M.size != 0:
+            if self.is_previewing_calibration:
+                image = cv2.warpPerspective(image, self.M, self.screen_transform['screen_dimension'])
+            else:
+                #在正常状态下画出屏幕边界
+                #需要交换横纵坐标？
+                pts = self.screen_transform['pts'].astype(int).tolist()
+                for i in range(-4, 0):
+                    cv2.line(image, pts[i], pts[i+1], (146, 136, 248), 6)
+                # print()
+                pass
+        width = int(image.shape[1] * self.scale_percent / 100)
+        height = int(image.shape[0] * self.scale_percent / 100)
+        dim = (width, height)
+        image = cv2.resize(image, dim, interpolation=cv2.INTER_AREA)
+        return image
 
     def predict(self, frame):
         frame.flags.writeable = False
         results = self.hands.process(frame)
         frame.flags.writeable = True
         h, w, _ = frame.shape
-        res = ()
+        res = []
         if results.multi_hand_landmarks:
+            #TODO: 卡尔曼滤波算法会在Apple Silicon上报错，未来添加
             for hand_landmarks in results.multi_hand_landmarks:
                 if self.M.size != 0:
+                    is_finger_in_screen = False
+                    # e = np.int32((hand_landmarks.landmark[8].x * w, hand_landmarks.landmark[8].y *h))
                     e = np.float32((hand_landmarks.landmark[8].x * w, hand_landmarks.landmark[8].y *h))
                     x, y = np.squeeze(cv2.perspectiveTransform(e.reshape(-1, 1, 2), self.M))
-                    current_measurement = np.array([[x], [y]])
-                    current_prediction = self.kalman.predict()
-                    self.kalman.correct(current_measurement)
-                    x = current_prediction[0][0]
-                    y = current_prediction[1][0]
-                    if x > 0 and x < self.SCREEN_RES[0]:
-                        if y > 0 and y < self.SCREEN_RES[1]:
-                            self.sigFingerTrackingPos.emit((
-                                True,
-                                (x, y)
-                            ))
-                            res = (x, y)
-                            print(res)
-                else:
-                    self.mp_drawing.draw_landmarks(
-                        frame,
-                        hand_landmarks,
-                        self.mp_hands.HAND_CONNECTIONS,
-                        self.mp_drawing_styles.get_default_hand_landmarks_style(),
-                        self.mp_drawing_styles.get_default_hand_connections_style())
+                    # x = current_prediction[0][0]
+                    # y = current_prediction[1][0]
+                    # cv2.circle(frame, (int(x), int(y)), 10, (255, 0, 0), 3)
+                    if x > 0 and x < self.screen_transform['screen_dimension'][0]:
+                        if y > 0 and y < self.screen_transform['screen_dimension'][1]:
+                            is_finger_in_screen = True
+                            self.paint_finger_screen_preview(frame, x, y)
+                    res.append((is_finger_in_screen, x/4, y/4))
+                self.mp_drawing.draw_landmarks(
+                    frame,
+                    hand_landmarks,
+                    self.mp_hands.HAND_CONNECTIONS,
+                    self.mp_drawing.DrawingSpec(
+                        color=(11, 102, 106),  # 设置关节的颜色
+                        thickness=25  # 设置关节的粗细
+                    ),
+                    self.mp_drawing.DrawingSpec(
+                        color=(151, 254, 237),  # 设置关节的颜色
+                        thickness=3  # 设置关节的粗细
+                    ))
+            self.sigFingerTrackingPos.emit(res)
         else:
-            self.sigFingerTrackingPos.emit((False, False))
+            pass
+            # self.sigFingerTrackingPos.emit((False, False))
         return frame, res
     
-    def set_matrix(self, M):
-        self.M = M
-        
-    def set_screen_res(self, res):
-        self.SCREEN_RES = res
+    def paint_finger_screen_preview(self, frame, x, y):
+        crds = np.array(
+            [[x, 0],
+            [x, self.screen_transform['screen_dimension'][1]],
+            [0, y],
+            [self.screen_transform['screen_dimension'][0], y]]
+        )
+        inverse_transformed_points = cv2.perspectiveTransform(crds.reshape(-1, 1, 2),
+                                    self.M_inverse)
+        p0,p1,p2,p3 = np.int32(inverse_transformed_points).squeeze().squeeze().tolist()
+        cv2.line(frame, p0, p1, (234, 17, 121), 6)
+        cv2.line(frame, p2, p3, (234, 17, 121), 6)
 
     def processArray(self, image: np.ndarray) -> np.ndarray:
         if len(image) == 0:
             pass
         else:
-            self.sigOriginalFrame.emit(cv2.cvtColor(image, cv2.COLOR_BGR2RGB))
+            image = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
+            self.sigOriginalFrame.emit(image)
             if self.pausePreview:
                 return np.array([])
-            scale_percent = 25 # percent of original size
-            width = int(image.shape[1] * scale_percent / 100)
-            height = int(image.shape[0] * scale_percent / 100)
-            dim = (width, height)
-            image = cv2.resize(image, dim, interpolation=cv2.INTER_AREA)
-            image = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
-            image, res = self.predict(image)
-            # if self.M.size != 0:
-            #     array = cv2.warpPerspective(array, self.M, self.SCREEN_RES)
-            #     if len(res) > 0:
-            #         x, y = res
-            #         cv2.line(array, (int(x), 0), (int(x), self.SCREEN_RES[1]), (255,0,0), 2)
-            #         cv2.line(array, (0, int(y)), (self.SCREEN_RES[0], int(y)), (255,0,0), 2)
+            if self.is_tracking_finger:
+                image, res = self.predict(image)
+            image = self.transform_and_scale(image)
         return image
     
 class EmptyWorker(ArrayWorker):
-    sigOriginalFrame = Signal(object)
     def __init__(self):
         super().__init__()
         
     def processArray(self, array: np.ndarray) -> np.ndarray:
         # print(time.time())
-        img = cv2.cvtColor(array, cv2.COLOR_BGR2RGB)
-        self.sigOriginalFrame.emit(img)
+        image = cv2.cvtColor(array, cv2.COLOR_BGR2RGB)
+        self.sigOriginalFrame.emit(image)
         if self.pausePreview:
             return np.array([])
         #用于预览的图像一定要小，否则两个摄像头同时采集时会引发UI的卡顿
-        scale_percent = 25 # percent of original size
-        width = int(img.shape[1] * scale_percent / 100)
-        height = int(img.shape[0] * scale_percent / 100)
-        dim = (width, height)
-        img = cv2.resize(img, dim, interpolation=cv2.INTER_AREA)
-        return img
+        image = self.scale(image)
+        return image
     
 
     
