@@ -7,6 +7,7 @@ import numpy as np
 from PySide6.QtCore import Signal
 import mediapipe as mp
 import time
+import cv2.aruco as aruco
 class ArrayWorker(Worker):
     sigOriginalFrame = Signal(object)
     pausePreview = False
@@ -66,11 +67,22 @@ class FingerWorker(ArrayWorker):
     '''
     sigFingerTrackingPos = Signal(object)
     screen_transform = {
-        'status': False
+        'status': False,
+    }
+    aruco_transform = {
+        'status': False,
+        'screen_dimension': [1500, 1500],
+        'M': np.array([])
+
     }
     is_tracking_finger = False
     is_previewing_calibration = False
     M = np.array([])
+    COLOR_FINGER_PREVIEW_CROSSHAIR = (255, 82, 162)
+    COLOR_SCREEN_PREVIEW_RECT = (255, 176, 127)
+    COLOR_ARUCO_RECT = (255, 0, 0)
+    COLOR_ARUCO_SUCCESS = (0, 255, 0)
+    COLOR_ARUCO_FAIL = (255, 0, 0)
     def __init__(self):
         super().__init__()
         self.mp_drawing = mp.solutions.drawing_utils
@@ -101,6 +113,10 @@ class FingerWorker(ArrayWorker):
                             R=measurementNoiseCov)
         # self.SCREEN_RES = screen_res
 
+        dictionary = cv2.aruco.getPredefinedDictionary(cv2.aruco.DICT_4X4_250)
+        parameters =  cv2.aruco.DetectorParameters()
+        self.detector = cv2.aruco.ArucoDetector(dictionary, parameters)
+
     def enable_finger_tracking(self, e):
         self.is_tracking_finger = bool(e)
 
@@ -113,27 +129,33 @@ class FingerWorker(ArrayWorker):
         '''
         self.screen_transform = e
         if self.screen_transform['status'] is False:
-            self.M = np.array([])
             return
-        width, height = self.screen_transform['screen_dimension']
-        pts = self.screen_transform['pts']
-        # print(pts)
-        dst = np.float32([[0, 0], [width, 0], [width, height], [0, height]])
-        self.M = cv2.getPerspectiveTransform(pts, dst)
-        self.M_inverse = cv2.invert(self.M)[1]
+        if self.aruco_transform['status'] is True:
+            '''
+            如果已经对mark进行标定，那么用户选择的坐标应该是位于aruco_transform坐标系下
+            这个坐标与aruco_transform坐标系直接相关，并不与世界坐标系直接相关
+            因此，先根据这个坐标计算出从aruco_transform坐标系到屏幕坐标系的M
+            原图上的每一点需要经过两次变换才能转换为屏幕上的坐标点
+            '''
+            width, height = self.screen_transform['screen_dimension'] #这里的宽高已经乘以了4
+            pts = self.screen_transform['pts']
+            dst = np.float32([[0, 0], [width, 0], [width, height], [0, height]])
+            self.M = cv2.getPerspectiveTransform(pts, dst)
+        print(e)
+        return
 
     def transform_and_scale(self, image):
-        if self.screen_transform['status'] is True and self.M.size != 0:
-            if self.is_previewing_calibration:
-                image = cv2.warpPerspective(image, self.M, self.screen_transform['screen_dimension'])
-            else:
-                #在正常状态下画出屏幕边界
-                #需要交换横纵坐标？
-                pts = self.screen_transform['pts'].astype(int).tolist()
-                for i in range(-4, 0):
-                    cv2.line(image, pts[i], pts[i+1], (146, 136, 248), 6)
-                # print()
-                pass
+        if self.is_previewing_calibration:
+            #有Mark标记辅助的情况下
+            if self.aruco_transform['status']:
+                image = cv2.warpPerspective(image, self.aruco_transform['M'], self.aruco_transform['screen_dimension'])
+                if self.M.size != 0 and self.screen_transform['status'] is True:
+                    image = cv2.warpPerspective(image, self.M, self.screen_transform['screen_dimension'])
+        elif self.M.size != 0 and self.screen_transform['status'] is True:
+            # M_combined = np.dot(self.M, self.aruco_transform['M']) 
+            M_inverse = cv2.invert(self.aruco_transform['M'])[1]
+            transformed_point = cv2.perspectiveTransform(self.screen_transform['pts'].reshape(1, -1, 2), M_inverse)[0]
+            image = self.draw_rect(image, transformed_point, color=self.COLOR_SCREEN_PREVIEW_RECT)
         width = int(image.shape[1] * self.scale_percent / 100)
         height = int(image.shape[0] * self.scale_percent / 100)
         dim = (width, height)
@@ -153,13 +175,15 @@ class FingerWorker(ArrayWorker):
                     is_finger_in_screen = False
                     # e = np.int32((hand_landmarks.landmark[8].x * w, hand_landmarks.landmark[8].y *h))
                     e = np.float32((hand_landmarks.landmark[8].x * w, hand_landmarks.landmark[8].y *h))
-                    x, y = np.squeeze(cv2.perspectiveTransform(e.reshape(-1, 1, 2), self.M))
+                    M = np.dot(self.M, self.aruco_transform['M'])
+                    x, y = np.squeeze(cv2.perspectiveTransform(e.reshape(-1, 1, 2), M))
                     # x = current_prediction[0][0]
                     # y = current_prediction[1][0]
                     # cv2.circle(frame, (int(x), int(y)), 10, (255, 0, 0), 3)
                     if x > 0 and x < self.screen_transform['screen_dimension'][0]:
                         if y > 0 and y < self.screen_transform['screen_dimension'][1]:
                             is_finger_in_screen = True
+                            print(x, y)
                             self.paint_finger_screen_preview(frame, x, y)
                     res.append((is_finger_in_screen, x/4, y/4))
                 self.mp_drawing.draw_landmarks(
@@ -168,7 +192,7 @@ class FingerWorker(ArrayWorker):
                     self.mp_hands.HAND_CONNECTIONS,
                     self.mp_drawing.DrawingSpec(
                         color=(11, 102, 106),  # 设置关节的颜色
-                        thickness=25  # 设置关节的粗细
+                        thickness=8  # 设置关节的粗细
                     ),
                     self.mp_drawing.DrawingSpec(
                         color=(151, 254, 237),  # 设置关节的颜色
@@ -187,24 +211,129 @@ class FingerWorker(ArrayWorker):
             [0, y],
             [self.screen_transform['screen_dimension'][0], y]]
         )
+        M = np.dot(self.M, self.aruco_transform['M'])
+        M_inversed = cv2.invert(M)[1]
         inverse_transformed_points = cv2.perspectiveTransform(crds.reshape(-1, 1, 2),
-                                    self.M_inverse)
+                                    M_inversed)
         p0,p1,p2,p3 = np.int32(inverse_transformed_points).squeeze().squeeze().tolist()
-        cv2.line(frame, p0, p1, (234, 17, 121), 6)
-        cv2.line(frame, p2, p3, (234, 17, 121), 6)
+        cv2.line(frame, p0, p1, self.COLOR_FINGER_PREVIEW_CROSSHAIR, 6)
+        cv2.line(frame, p2, p3, self.COLOR_FINGER_PREVIEW_CROSSHAIR, 6)
 
     def processArray(self, image: np.ndarray) -> np.ndarray:
         if len(image) == 0:
-            pass
-        else:
-            image = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
-            self.sigOriginalFrame.emit(image)
-            if self.pausePreview:
-                return np.array([])
-            if self.is_tracking_finger:
-                image, res = self.predict(image)
-            image = self.transform_and_scale(image)
+            return image
+        image = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
+        self.sigOriginalFrame.emit(image)
+        if self.pausePreview:
+            return np.array([])
+        success, pts = self.update_aruco(image)
+        if self.is_tracking_finger:
+            image, res = self.predict(image)
+        if success:
+            try:
+                image = self.paint_aruco(image, pts)
+            except Exception as e:
+                print(e)
+        image = self.transform_and_scale(image)
         return image
+    
+    def sort_aruco_arrays(self, *e): 
+        '''
+        aruco检测算法得到的坐标顺序为规定的固定顺序
+        将一个aruco标记的坐标顺序转换为实际在图像上位置的左上-右上-左下-右下
+        '''
+        res = []
+        for array in e:
+            x0, y0 = np.mean(array, axis=0)
+            i = np.where(np.logical_and(array[:, 0] <= x0, array[:, 1] <= y0))[0][0] + 1
+            array = np.vstack((array[-1], array, array[:3]))[i:i+4]
+            res.append(array)
+        return res
+    
+    def paint_aruco(self, image, pts):
+        '''
+        在检测到四个ARUCO标记时，计算出四个标记的位置顺序，获得标记屏幕范围的四边形参数
+        '''
+        pts = np.squeeze(np.array(pts), axis=1)
+        aruco_centers = np.mean(pts, axis=1) #mark的中心点
+        img_center = np.mean(aruco_centers, axis=0) #四边形的中心点
+
+        #区分标记的相对位置，前提是mark都摆的比较正，不算太歪（不超过45度）
+        tl = pts[(pts[:, :, 0] < img_center[0]) & (pts[:, :, 1] < img_center[1])]
+        tr = pts[(pts[:, :, 0] > img_center[0]) & (pts[:, :, 1] < img_center[1])]
+        bl = pts[(pts[:, :, 0] < img_center[0]) & (pts[:, :, 1] > img_center[1])]
+        br = pts[(pts[:, :, 0] > img_center[0]) & (pts[:, :, 1] > img_center[1])]
+        
+        tl, tr, bl, br = self.sort_aruco_arrays(tl, tr, bl, br)
+        
+        #获取mark位置边界
+        big_rect = np.array([
+            tl[0], tr[1], br[2], bl[-1]
+        ])
+
+        
+        if not self.is_previewing_calibration and not self.screen_transform['status']:
+            image = self.draw_rect(image, big_rect, self.COLOR_ARUCO_RECT, 5)
+
+        '''
+        并没有使用比较复杂的solvePnP等方法推算空间位置，因为这会涉及到摄像头的参数矫正等问题
+        1. 在用户尚未进行屏幕标定时(screen_transform['status'] is False)
+            首先计算将mark边界四边形转换为1000*1000的正方形的矩阵M
+            然后根据新的正方形里mark内边界与边长的比例关系（已知mark为正方形）计算mark矩形的长宽比
+            最后根据新的确认的矩形尺寸重新计算转换矩阵M，将确认的M和矩形尺寸保存
+        2. 用户已进行了屏幕标定(screen_transform['status'] is True)
+            此时Mark的位置关系已经得到确认，不宜再进行更改
+            因此直接计算将mark边界四边形转换为易保存尺寸的正方形的矩阵M
+            保存新的M
+        注意：并没有任何要求规定用户贴的Mark必须构成一个完美的矩形，因此这一步算出的矩形尺寸只是Estimate
+            并不能少了用户标定这一步
+        '''
+
+        if self.screen_transform['status'] is False and self.is_previewing_calibration is False:
+            width, height = 1000, 1000
+            dst = np.array([[0,0],[width,0], [width,width], [0, width]]).astype(np.float32)
+            M = cv2.getPerspectiveTransform(big_rect, dst)
+            small_rect = np.array([
+                tl[2], tr[-1], br[0], bl[1]
+            ])
+            #由mark构成的内部的小四边形转换到新的坐标系下，根据其畸变计算大致的长宽比
+            small_rect = np.squeeze(cv2.perspectiveTransform(small_rect.reshape(-1, 1, 2), M) )
+            # print(small_rect)
+            h = np.sum(small_rect[:2, 1]) + np.sum(height - small_rect[2:, 1])
+            w = np.sum(small_rect[[0,3], 0]) + np.sum(width - small_rect[[1,2], 0])
+            #mark长度实际上对应的是所占的这一边的比例，数值越大这一边越短
+            w_h_ratio = h / w
+            #固定高度为1000
+            self.aruco_transform['screen_dimension'] = [round(w_h_ratio*1000), 1000]
+
+        width, height = self.aruco_transform['screen_dimension']
+        dst = np.array([[0,0],[width,0], [width,height], [0, height]]).astype(np.float32)
+        self.aruco_transform['M'] = cv2.getPerspectiveTransform(big_rect, dst)
+        self.aruco_transform['status'] = True
+        return image
+
+    def draw_rect(self, image, rect, color=(255, 0, 0), thickness=5):
+        rect = rect.astype(int).tolist()
+        cv2.line(image, rect[0], rect[1], color, thickness)
+        cv2.line(image, rect[1], rect[2], color, thickness)
+        cv2.line(image, rect[2], rect[3], color, thickness)
+        cv2.line(image, rect[0], rect[3], color, thickness)
+        return image
+    
+    def update_aruco(self, image):
+        '''
+        检测画面中的aruco mark，根据第一个mark的坐标更新M和M_inverse
+        '''
+        gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
+        # 检测ArUco标记
+        corners, ids, rejectedImgPoints = self.detector.detectMarkers(gray)
+        if not self.is_previewing_calibration:
+            color = self.COLOR_ARUCO_SUCCESS if len(corners) == 4 else self.COLOR_ARUCO_FAIL
+            for i in corners:
+                image =self.draw_rect(image, i[0], color, 7)
+        if ids is None or len(ids) != 4:
+            return False, 0
+        return True, corners
     
 class EmptyWorker(ArrayWorker):
     def __init__(self):
