@@ -11,6 +11,8 @@ from src.ui.widgets.CabinLabel import CabinLabel
 from src.ui.widgets.Element import VideoLabel, LineWidget, CamSelectWidget
 from src.ui.widgets.Toggle import SettingWidget
 import os
+import time
+import numpy as np
 
 class CabinVideoLabel(VideoLabel):
     default_color = ('#CC97DECE', '#439A97')
@@ -132,7 +134,14 @@ class FaceSettingView(QWidget):
         layout.addLayout(l2, 3.5)
         
         self.setLayout(layout)
-        
+
+        #手指移动计算初始化变量
+        # 初始化变量
+        self.num_frames = 5  # 使用多少帧来计算平均速度
+        self.frame_buffer = []
+        self.prev_time = time.time()
+        self.prev_velocity = None
+        self.prev_acceleration = 0.0
 
         #Dynamic Resizing
         # self.facebox.resizeEvent
@@ -196,16 +205,54 @@ class FaceSettingView(QWidget):
         
         l.addStretch()
         return l
-    
+
     def preview_finger_status(self, res):
         if len(res) == 0:
+            # 初始化变量
+            self.prev_time = time.time()
+            self.frame_buffer = []
+            self.prev_position = None
+            self.prev_velocity = None
+            self.prev_acceleration = 0.0
+
             self.finger_preview_text.setText("未检测到食指位置")
         else:
             s = ""
+            vel_acc_msg = ''
             for i in res:
                 status, x, y = i
                 s += f"x={round(x, 2)}mm, y={round(y,2)}mm{' 在屏幕外' if not status else ''}\n"
+
+                current_time = time.time()
+                dt = current_time - self.prev_time
+                # 添加当前帧的手指位置到缓冲区
+                self.frame_buffer.append((x, y))
+                if len(self.frame_buffer) >= self.num_frames:
+                    # 计算平均速度
+                    total_displacement = 0
+                    for i in range(1, len(self.frame_buffer)):
+                        displacement = np.sqrt((self.frame_buffer[i][0] - self.frame_buffer[i - 1][0]) ** 2 +
+                                               (self.frame_buffer[i][1] - self.frame_buffer[i - 1][1]) ** 2)
+                        total_displacement += displacement
+                    average_velocity = total_displacement / (self.num_frames - 1) / dt
+
+                # 计算加速度（加速度 = 速度变化 / 时间）
+                if self.prev_velocity != None:
+                    acceleration = (average_velocity - self.prev_velocity) / dt
+
+                # 更新变量
+                self.prev_time = current_time
+                self.prev_velocity = average_velocity
+                self.prev_acceleration = acceleration
+
+                # 移除最旧的帧
+                self.frame_buffer.pop(0)
+
+                vel_acc_msg += f"速度={average_velocity}, 加速度={acceleration}\n"
+
+
             self.finger_preview_text.setText(s)
+            self.finger_preview_text.setText(vel_acc_msg)
 
     def settingbox1(self):
         l = QVBoxLayout()
